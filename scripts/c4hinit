@@ -1,0 +1,73 @@
+#!/bin/bash
+# c4hinit: create a Code4hep development area on top of the installed release.
+#
+# The area is a Spack environment with the same configuration and lock file as
+# the release environment code4hep_env. The release installation is used as an
+# upstream, so only Code4hep (built from the given sources with spack develop)
+# and its dependents are installed into the area. Apart from Spack's bootstrap
+# store, nothing is written outside the area and $HOME, so the release
+# installation may be read-only.
+
+# shellcheck disable=SC2016  # $env in single quotes is meant for Spack
+set -euo pipefail
+
+usage() {
+    echo "usage: c4hinit <area> [--source <path> | --ref <git-ref>] [--repo <url>] [-j N]" >&2
+    exit 1
+}
+
+[ $# -ge 1 ] || usage
+area=$1
+shift
+source_dir=
+ref=main
+repo=https://github.com/code4hep/Code4hep.git
+jobs=$(nproc)
+while [ $# -gt 0 ]; do
+    case $1 in
+        --source) source_dir=$(realpath "$2") ;;
+        --ref) ref=$2 ;;
+        --repo) repo=$2 ;;
+        -j) jobs=$2 ;;
+        *) usage ;;
+    esac
+    shift 2
+done
+
+if [ -e "$area" ]; then
+    echo "c4hinit: $area already exists" >&2
+    exit 1
+fi
+
+SPACK_ROOT=${SPACK_ROOT:-/opt/spack}
+release=$SPACK_ROOT/var/spack/environments/code4hep_env
+
+mkdir -p "$area"
+area=$(cd "$area" && pwd)
+touch "$area/.c4harea"
+cp "$release/spack.yaml" "$release/spack.lock" "$area/"
+chmod u+w "$area/spack.yaml" "$area/spack.lock"
+
+spack() { "$SPACK_ROOT/bin/spack" -e "$area" "$@"; }
+# $env is expanded by Spack to the environment directory.
+spack config add 'config:install_tree:root:$env/.spack/install'
+spack config add 'config:build_stage:[$env/.spack/stage]'
+spack config add 'config:source_cache:$env/.spack/cache'
+# Keeps Spack's stage symlink out of the source tree.
+spack config add "config:develop_stage_link:$area/.spack/code4hep-stage"
+spack config add "upstreams:c4h-base:install_tree:$SPACK_ROOT/opt/spack"
+
+if [ -z "$source_dir" ]; then
+    source_dir=$area/Code4hep
+    git clone -q "$repo" "$source_dir"
+    git -C "$source_dir" checkout -q "$ref"
+fi
+
+# The version must match the release lock, so that only Code4hep is rebuilt.
+spack develop --no-clone --path "$source_dir" code4hep@main
+# spack develop does not re-concretize an already concretized environment.
+spack concretize -f
+ln -s "$(spack location -b code4hep)" "$area/build"
+spack install --fail-fast --show-log-on-error -j "$jobs"
+
+echo "Development area ready: cd $area; c4henv"
