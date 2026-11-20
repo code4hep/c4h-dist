@@ -1,0 +1,24 @@
+ARG BASE_IMAGE=ghcr.io/code4hep/c4h-base:latest
+FROM ${BASE_IMAGE}
+
+SHELL ["/bin/bash", "-c"]
+
+# c4h-spack-packages branch, tag or commit to build
+ARG C4H_SPACK_PACKAGES_REF=main
+ARG C4H_CACHE_URL=oci://ghcr.io/code4hep/c4h-buildcache
+ARG C4H_INSTALL_ARGS="--fail-fast --show-log-on-error -j4"
+
+COPY spack.yaml /opt/c4h-dist/spack.yaml
+COPY scripts/ /opt/c4h-dist/scripts/
+
+# Binaries come from the build cache filled by the full-image workflow.
+RUN /opt/c4h-dist/scripts/install-stack.sh setup build && \
+    /opt/spack/bin/spack clean -a && \
+    /opt/c4h-dist/scripts/install-stack.sh check
+
+RUN install -m 755 /opt/c4h-dist/scripts/c4hinit /usr/local/bin/c4hinit && \
+    install -m 644 /opt/c4h-dist/scripts/c4henv.sh /etc/profile.d/c4henv.sh
+
+ENV SPACK_ROOT=/opt/spack
+
+CMD ["bash"]
