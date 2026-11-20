@@ -29,7 +29,9 @@ RUN dnf -y update && \
     libXft-devel \
     libXext-devel \
     mesa-libGL-devel \
+    mesa-libGLU-devel \
+    clang-tools-extra \
     glibc-langpack-en && \
     dnf clean all
 
-LABEL org.opencontainers.image.source="https://github.com/virajnain/c4h-dist"
+LABEL org.opencontainers.image.source="https://github.com/code4hep/c4h-dist"
