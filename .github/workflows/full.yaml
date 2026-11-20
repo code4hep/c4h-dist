@@ -1,0 +1,195 @@
+name: Full image
+
+on:
+  workflow_dispatch:
+    inputs:
+      packages_ref:
+        description: c4h-spack-packages branch, tag or commit to build
+        default: main
+      attempt:
+        description: Cache-fill attempt (incremented by the automatic re-dispatch)
+        default: "1"
+  push:
+    branches: [main]
+    paths: &paths [Dockerfile.full, spack.yaml, "scripts/**", .github/workflows/full.yaml]
+  pull_request:
+    paths: *paths
+
+concurrency:
+  group: full-${{ inputs.packages_ref || github.ref }}
+
+permissions:
+  contents: read
+
+jobs:
+  # Building the whole stack takes longer than the 6 h job limit, so this job
+  # builds what is missing from the build cache within a time budget, pushes
+  # everything it built, and re-dispatches the workflow until the cache is complete.
+  fill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    permissions:
+      contents: read
+      packages: write
+      actions: write
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/c4h-base:latest
+      # needed while the package is private
+      # credentials:
+      #   username: ${{ github.actor }}
+      #   password: ${{ secrets.GITHUB_TOKEN }}
+      # preinstalled host toolchains, removed to free disk space
+      volumes: &host-dirs
+        - /usr/share/dotnet:/host/dotnet
+        - /usr/local/lib/android:/host/android
+        - /opt/ghc:/host/ghc
+        - /opt/hostedtoolcache:/host/toolcache
+    outputs:
+      complete: ${{ steps.fill.outputs.complete }}
+    steps:
+      - name: Free host disk space
+        run: &free-disk |
+          df -h /
+          rm -rf /host/dotnet/* /host/android/* /host/ghc/* /host/toolcache/*
+          df -h /
+      - uses: actions/checkout@v7
+      - name: Build missing packages and push them to the build cache
+        id: fill
+        env:
+          C4H_SPACK_PACKAGES_REF: ${{ inputs.packages_ref || 'main' }}
+          C4H_CACHE_URL: oci://ghcr.io/${{ github.repository_owner }}/c4h-buildcache
+          C4H_INSTALL_ARGS: --fail-fast --show-log-on-error -j4
+          GHCR_USER: ${{ github.actor }}
+          # empty for pull requests from forks, which cannot push
+          GHCR_TOKEN: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.GITHUB_TOKEN || '' }}
+        run: |
+          status=0
+          scripts/install-stack.sh setup fill || status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          if [ "$status" = 0 ]; then echo "complete=true" >> "$GITHUB_OUTPUT"; fi
+          [ "$status" = 0 ] || [ "$status" = 124 ]
+      - name: Continue in a new run
+        if: steps.fill.outputs.status == '124'
+        env:
+          ATTEMPT: ${{ inputs.attempt || '1' }}
+          PACKAGES_REF: ${{ inputs.packages_ref || 'main' }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            echo "::error::Out of time; re-run this job to continue filling the build cache"
+            exit 1
+          fi
+          if [ "$ATTEMPT" -ge 6 ]; then
+            echo "::error::Build cache still incomplete after $ATTEMPT attempts"
+            exit 1
+          fi
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${{ github.token }}" -H "Accept: application/vnd.github+json" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/workflows/full.yaml/dispatches" \
+            -d "{\"ref\":\"$GITHUB_REF_NAME\",\"inputs\":{\"packages_ref\":\"$PACKAGES_REF\",\"attempt\":\"$((ATTEMPT + 1))\"}}"
+
+  # Installs the stack from the build cache into the image and pushes it under
+  # its sha- tag only; the moving tags are set after the smoke test passed.
+  image:
+    needs: fill
+    if: needs.fill.outputs.complete == 'true'
+    # These steps only drive Docker on the host; the image is built in AlmaLinux 9 layers.
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Free host disk space
+        run: |
+          docker run --rm -v /usr/share/dotnet:/host/dotnet -v /usr/local/lib/android:/host/android \
+            -v /opt/ghc:/host/ghc -v /opt/hostedtoolcache:/host/toolcache \
+            almalinux:9 bash -c 'rm -rf /host/dotnet/* /host/android/* /host/ghc/* /host/toolcache/*'
+          df -h /
+      - uses: actions/checkout@v7
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/c4h-full
+          tags: type=sha,prefix=sha-
+      - id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile.full
+          build-args: |
+            BASE_IMAGE=ghcr.io/${{ github.repository_owner }}/c4h-base:latest
+            C4H_SPACK_PACKAGES_REF=${{ inputs.packages_ref || 'main' }}
+            C4H_CACHE_URL=oci://ghcr.io/${{ github.repository_owner }}/c4h-buildcache
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  smoke-test:
+    needs: image
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/c4h-full@${{ needs.image.outputs.digest }}
+      # needed while the package is private
+      # credentials:
+      #   username: ${{ github.actor }}
+      #   password: ${{ secrets.GITHUB_TOKEN }}
+      volumes: *host-dirs
+    defaults:
+      run:
+        # login shell, so that /etc/profile.d/c4henv.sh defines c4henv
+        shell: bash -leo pipefail {0}
+    steps:
+      - name: Free host disk space
+        run: *free-disk
+      - name: Release environment
+        run: |
+          c4henv
+          cmsRun --help
+          python3 -c "import FWCore.ParameterSet.Config"
+      - name: Development area
+        run: c4hinit "$RUNNER_TEMP/area" --ref main
+      - name: Only Code4hep is installed in the area
+        run: |
+          installed=$("$SPACK_ROOT/bin/spack" -e "$RUNNER_TEMP/area" find --format '{name} {prefix}' |
+            awk -v area="$RUNNER_TEMP/area/.spack/install/" 'index($2, area) == 1 {print $1}')
+          echo "Installed in the area: $installed"
+          [ "$installed" = code4hep ]
+      - name: Tests
+        # Allowed to fail until the Code4hep tests set up their own environment
+        # and no longer write into the source tree.
+        continue-on-error: true
+        run: |
+          cd "$RUNNER_TEMP/area"
+          c4henv
+          ctest --test-dir "$(readlink -f build)" --output-on-failure
+
+  publish:
+    needs: [image, smoke-test]
+    # Only drives Docker on the host.
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Tag the tested image
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/c4h-full
+          DIGEST: ${{ needs.image.outputs.digest }}
+          PACKAGES_REF: ${{ inputs.packages_ref || 'main' }}
+        run: |
+          tags=()
+          if [ "$GITHUB_REF" = refs/heads/main ]; then tags+=(-t "$IMAGE:latest"); fi
+          if [[ $PACKAGES_REF =~ ^[0-9a-f]{40}$ ]]; then tags+=(-t "$IMAGE:pkgs-${PACKAGES_REF::7}"); fi
+          if [ ${#tags[@]} -gt 0 ]; then docker buildx imagetools create "${tags[@]}" "$IMAGE@$DIGEST"; fi

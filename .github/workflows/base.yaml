@@ -1,0 +1,55 @@
+name: Base image
+
+on:
+  push:
+    branches: [main]
+    paths: [Dockerfile.base, .github/workflows/base.yaml]
+  pull_request:
+    paths: [Dockerfile.base, .github/workflows/base.yaml]
+  workflow_dispatch:
+
+jobs:
+  build:
+    # These steps only drive Docker on the host; the image itself is AlmaLinux 9.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/login-action@v4
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/c4h-base
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=sha-
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile.base
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  # The system packages are externals of the Spack installation, so the full
+  # image is rebuilt on top of a new base image.
+  dispatch-full:
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    container: almalinux:9
+    permissions:
+      actions: write
+    steps:
+      - run: |
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${{ github.token }}" -H "Accept: application/vnd.github+json" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/workflows/full.yaml/dispatches" \
+            -d '{"ref":"main","inputs":{"packages_ref":"main"}}'
