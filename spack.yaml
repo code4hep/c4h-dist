@@ -1,0 +1,39 @@
+spack:
+  repos:
+  - /opt/c4h-spack-packages/spack_repo/code4hep
+  # The release is the newest date version of code4hep in c4h-spack-packages;
+  # branch versions such as "main" are never chosen implicitly.
+  specs:
+  - code4hep ^root@6.36
+  concretizer:
+    unify: true
+
+  # HEP-specific versions are pinned in c4h-spack-packages; only the compiler
+  # and Python basics are pinned here.
+  packages:
+    all:
+      # Hard requirement: a plain "target:" list is only a preference in Spack 1.0
+      # and loses to reusing binaries built for another target.
+      require: [target=x86_64_v3]
+      variants: cxxstd=20
+    c: {require: [gcc@14]}
+    cxx: {require: [gcc@14]}
+    fortran: {require: [gcc@14]}
+    # Pinned for reproducibility. Package-specific requirements replace the ones
+    # under "all", so the target is repeated.
+    py-hatchling:
+      require: ["@1.29.0", target=x86_64_v3]
+    py-trove-classifiers:
+      require: ["@2026.6.1.19", target=x86_64_v3]
+    # OpenGL from the base image (mesa-libGL-devel, mesa-libGLU-devel), so that
+    # mesa and its LLVM dependency are not built from source
+    opengl:
+      buildable: false
+      externals:
+      - spec: opengl@4.5
+        prefix: /usr
+    openglu:
+      buildable: false
+      externals:
+      - spec: openglu@1.3
+        prefix: /usr
