@@ -63,8 +63,10 @@ if [ -z "$source_dir" ]; then
     git -C "$source_dir" checkout -q "$ref"
 fi
 
-# The version must match the release lock, so that only Code4hep is rebuilt.
-spack develop --no-clone --path "$source_dir" code4hep@main
+# The sources (any ref) are built as the release's code4hep version, so that the
+# rest of the release lock stays valid and only Code4hep is rebuilt.
+version=$(spack find --format '{version}' code4hep)
+spack develop --no-clone --path "$source_dir" "code4hep@=$version"
 # spack develop does not re-concretize an already concretized environment.
 spack concretize -f
 ln -s "$(spack location -b code4hep)" "$area/build"

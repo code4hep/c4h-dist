@@ -62,8 +62,10 @@ and therefore the cache hits, are identical.
   preference in Spack 1.0 and loses to reusing existing binaries. The image build
   checks that every Spack-built package has this target.
 - **Versions:** HEP-specific versions are pinned in c4h-spack-packages; only the
-  compiler and Python basics are pinned in `spack.yaml` here. Spack itself
-  (`v1.0.0`) and Spack's builtin package repository (a fixed commit) are pinned in
+  compiler and Python basics are pinned in `spack.yaml` here. The image contains
+  the newest date version of Code4hep defined in c4h-spack-packages, so a Code4hep
+  release is made by adding its version there. Spack itself (`v1.0.0`) and
+  Spack's builtin package repository (a fixed commit) are pinned in
   `scripts/install-stack.sh`.
 - **Configuration scope:** compilers, mirrors, repositories and the bootstrap
   location are written to Spack's *site* scope (`/opt/spack/etc/spack`), because
@@ -93,9 +95,10 @@ c4henv [--build-tree]
 ```
 
 `c4hinit` creates the development area `<area>` as a Spack environment with the
-same configuration and lock file as `code4hep_env`, clones Code4hep (or uses the
-sources given with `--source`), registers it with `spack develop`, and installs
-it. The release installation is used as a Spack upstream, so only Code4hep is
+same configuration and lock file as `code4hep_env`, clones Code4hep (`main`
+unless `--ref` is given, or uses the sources given with `--source`), registers
+it with `spack develop` under the release's Code4hep version, and installs it.
+The release installation is used as a Spack upstream, so only Code4hep is
 rebuilt in the area; everything else is reused. `<area>/build` links to the
 CMake build tree.
 
@@ -127,5 +130,6 @@ self-dispatch.
 
 ## Planned additions
 
-- Separate nightly and release tags.
+- Nightly images (tag `nightly`) built from Code4hep `main`, separate from the
+  release images, which keep building the newest date version.
 - Starting the Code4hep CI after a new `c4h-full` image is published.

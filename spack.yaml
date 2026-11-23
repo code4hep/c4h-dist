@@ -1,8 +1,10 @@
 spack:
   repos:
   - /opt/c4h-spack-packages/spack_repo/code4hep
+  # The release is the newest date version of code4hep in c4h-spack-packages;
+  # branch versions such as "main" are never chosen implicitly.
   specs:
-  - code4hep@main ^root@6.36
+  - code4hep ^root@6.36
   concretizer:
     unify: true
 
