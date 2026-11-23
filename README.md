@@ -89,15 +89,17 @@ environment.
 `c4hinit` and `c4henv` are analogous to `cmsrel` and `cmsenv`:
 
 ```bash
-c4hinit <area> [--source <path> | --ref <git-ref>] [--repo <url>] [-j N]
+c4hinit <area> [--source <path> | [--ref <git-ref>] [--repo <url>]] [-j N]
 cd <area>
 c4henv [--build-tree]
 ```
 
 `c4hinit` creates the development area `<area>` as a Spack environment with the
-same configuration and lock file as `code4hep_env`, clones Code4hep (`main`
-unless `--ref` is given, or uses the sources given with `--source`), registers
-it with `spack develop` under the release's Code4hep version, and installs it.
+same configuration and lock file as `code4hep_env`. It either uses existing
+Code4hep sources (`--source`), or clones `--repo` (default: the Code4hep
+repository) at `--ref` (default: `main`); the two modes cannot be combined. It
+registers the sources with `spack develop` under the release's Code4hep version,
+and installs it.
 The release installation is used as a Spack upstream, so only Code4hep is
 rebuilt in the area; everything else is reused. `<area>/build` links to the
 CMake build tree.

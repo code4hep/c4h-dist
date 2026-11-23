@@ -11,8 +11,10 @@
 # shellcheck disable=SC2016  # $env in single quotes is meant for Spack
 set -euo pipefail
 
+# Code4hep is built either from existing sources (--source) or from a new clone
+# of --repo at --ref; the options of the two modes cannot be combined.
 usage() {
-    echo "usage: c4hinit <area> [--source <path> | --ref <git-ref>] [--repo <url>] [-j N]" >&2
+    echo "usage: c4hinit <area> [--source <path> | [--ref <git-ref>] [--repo <url>]] [-j N]" >&2
     exit 1
 }
 
@@ -20,8 +22,8 @@ usage() {
 area=$1
 shift
 source_dir=
-ref=main
-repo=https://github.com/code4hep/Code4hep.git
+ref=
+repo=
 jobs=$(nproc)
 while [ $# -gt 0 ]; do
     case $1 in
@@ -33,6 +35,11 @@ while [ $# -gt 0 ]; do
     esac
     shift 2
 done
+if [ -n "$source_dir" ] && [ -n "$ref$repo" ]; then
+    usage
+fi
+ref=${ref:-main}
+repo=${repo:-https://github.com/code4hep/Code4hep.git}
 
 if [ -e "$area" ]; then
     echo "c4hinit: $area already exists" >&2
