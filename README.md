@@ -120,21 +120,3 @@ writable location once (clingo is then downloaded again):
 ```bash
 spack bootstrap root --scope user '~/.spack/bootstrap'
 ```
-
-## One-time administrative setup
-
-- Make the packages `c4h-base`, `c4h-full` and `c4h-buildcache` public in their
-  package settings (this cannot be undone). Until then, the container jobs need
-  the commented-out `credentials:` blocks in `full.yaml`, and users need to log in.
-- Check that the organization allows public packages.
-- Set up the token in c4h-spack-packages that dispatches the full-image workflow
-  (see its README).
-
-No secrets are needed in this repository: `GITHUB_TOKEN` covers ghcr and the
-self-dispatch.
-
-## Planned additions
-
-- Nightly images (tag `nightly`) built from Code4hep `main`, separate from the
-  release images, which keep building the newest date version.
-- Starting the Code4hep CI after a new `c4h-full` image is published.
