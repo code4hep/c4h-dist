@@ -22,6 +22,7 @@ RUN dnf -y update && \
     hostname \
     perl \
     procps-ng \
+    tcsh \
     openssl-devel \
     libuuid-devel \
     libX11-devel \

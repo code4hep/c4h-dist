@@ -16,8 +16,8 @@ RUN /opt/c4h-dist/scripts/install-stack.sh setup build && \
     /opt/spack/bin/spack clean -a && \
     /opt/c4h-dist/scripts/install-stack.sh check
 
-RUN install -m 755 /opt/c4h-dist/scripts/c4hinit /usr/local/bin/c4hinit && \
-    install -m 644 /opt/c4h-dist/scripts/c4henv.sh /etc/profile.d/c4henv.sh
+RUN install -m 755 /opt/c4h-dist/scripts/c4hinit /opt/c4h-dist/scripts/c4hruntime /usr/local/bin/ && \
+    install -m 644 /opt/c4h-dist/scripts/c4henv.sh /opt/c4h-dist/scripts/c4henv.csh /etc/profile.d/
 
 ENV SPACK_ROOT=/opt/spack
 

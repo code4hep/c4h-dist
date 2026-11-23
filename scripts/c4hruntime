@@ -1,0 +1,96 @@
+#!/bin/bash
+# c4hruntime: print the commands that set up the run-time environment of
+# Code4hep, for sh-compatible shells (--sh) or csh/tcsh (--csh). The c4henv
+# command of each shell evaluates this output, like cmsenv does with
+# "scram runtime -sh|-csh".
+#
+# The environment is set up here, in bash, for the development area containing
+# $PWD (created by c4hinit), or for the release environment code4hep_env outside
+# of an area. The resulting changes of exported variables are then printed in
+# the requested syntax, so the setup logic exists only once for all shells.
+#
+# Real installation prefixes are loaded rather than the environment view: both
+# Stitched and Code4hep install lib/.edmplugincache, and a view keeps only one.
+# Stitched's PluginManager reads the plugin caches of the LD_LIBRARY_PATH
+# directories in order, and the first one that provides a plugin wins.
+#
+# Usage: c4hruntime --sh|--csh [--build-tree]
+#   --build-tree  also put the area's build tree first, so that the freshly
+#                 built libraries and plugins are used instead of the installed ones
+set -eo pipefail
+
+usage() {
+    echo "usage: c4hruntime --sh|--csh [--build-tree]" >&2
+    exit 1
+}
+
+case $1 in
+    --sh | --csh) syntax=$1 ;;
+    *) usage ;;
+esac
+case $2 in
+    --build-tree) build_tree=1 ;;
+    "") build_tree= ;;
+    *) usage ;;
+esac
+
+declare -A before=()
+while IFS= read -r -d '' entry; do
+    before[${entry%%=*}]=${entry#*=}
+done < <(env -0)
+
+env=code4hep_env
+dir=$PWD
+while [ "$dir" != / ]; do
+    if [ -e "$dir/.c4harea" ]; then
+        env=$dir
+        break
+    fi
+    dir=$(dirname "$dir")
+done
+
+# Output of the setup scripts must not end up in the printed commands.
+{
+    . "${SPACK_ROOT:-/opt/spack}/share/spack/setup-env.sh"
+    # also applies the run environment of the dependencies (ROOT, podio, DD4hep, ...)
+    eval "$(spack -e "$env" load --sh code4hep)"
+    # Spack does not set up Stitched's run-time environment by itself.
+    . "$(spack -e "$env" location -i stitched)/bin/stitched_env.sh"
+
+    prefix=$(spack -e "$env" location -i code4hep)
+    export LD_LIBRARY_PATH=$prefix/lib:$LD_LIBRARY_PATH
+    export PYTHONPATH=$prefix/python:$PYTHONPATH
+
+    if [ -n "$build_tree" ]; then
+        build=$(spack -e "$env" location -b code4hep)
+        export LD_LIBRARY_PATH=$build/lib:$LD_LIBRARY_PATH
+        export PYTHONPATH=$build/python:$PYTHONPATH
+    fi
+} >&2
+
+declare -A after=()
+while IFS= read -r -d '' entry; do
+    after[${entry%%=*}]=${entry#*=}
+done < <(env -0)
+
+# Single-quoted values; csh also expands "!" inside single quotes.
+quote() {
+    local value=${1//\'/\'\\\'\'}
+    [ "$syntax" = --sh ] || value=${value//!/\\!}
+    printf "'%s'" "$value"
+}
+
+for name in "${!before[@]}" "${!after[@]}"; do
+    case $name in
+        _ | BASH_FUNC_*) continue ;;
+    esac
+    if [ -z "${after[$name]+set}" ]; then
+        if [ "$syntax" = --sh ]; then echo "unset $name;"; else echo "unsetenv $name;"; fi
+    elif [ -z "${before[$name]+set}" ] || [ "${before[$name]}" != "${after[$name]}" ]; then
+        if [ "$syntax" = --sh ]; then
+            echo "export $name=$(quote "${after[$name]}");"
+        else
+            echo "setenv $name $(quote "${after[$name]}");"
+        fi
+    fi
+done | sort -u

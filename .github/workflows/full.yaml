@@ -154,6 +154,13 @@ jobs:
           c4henv
           cmsRun --help
           python3 -c "import FWCore.ParameterSet.Config"
+      - name: Release environment in tcsh
+        shell: tcsh -ef {0}
+        run: |
+          source /etc/profile.d/c4henv.csh
+          c4henv
+          cmsRun --help
+          python3 -c "import FWCore.ParameterSet.Config"
       - name: Development area
         run: c4hinit "$RUNNER_TEMP/area" --ref main
       - name: Only Code4hep is installed in the area

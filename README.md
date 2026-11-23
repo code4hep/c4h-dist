@@ -79,10 +79,13 @@ c4henv            # sets up the run-time environment of code4hep_env
 cmsRun --help
 ```
 
-`c4henv` is defined in `/etc/profile.d/c4henv.sh` (login shells). It loads the
-installed Code4hep and its dependencies with `spack load` and sources Stitched's
-`stitched_env.sh`. Activating `code4hep_env` alone does not set up the run-time
-environment.
+`c4henv` works in bash and tcsh; it is defined in `/etc/profile.d/c4henv.sh` and
+`/etc/profile.d/c4henv.csh`. Both evaluate the output of `c4hruntime --sh|--csh`
+(as `cmsenv` does with `scram runtime`), which loads the installed Code4hep and
+its dependencies with `spack load`, sources Stitched's `stitched_env.sh`, and
+prints the resulting environment changes in the shell's syntax, so the setup
+logic exists only once. Activating `code4hep_env` alone does not set up the
+run-time environment.
 
 ## Developing Code4hep
 
